@@ -29,10 +29,6 @@ Dentists on staff:
 
 New patients are not booked until forms are saved. Labeled intake fields are written to the JSON database before the model sees them. That rule is also enforced when booking.
 
-## Challenge checklist
-
-
-
 ## How state moves
 
 ```mermaid
@@ -91,16 +87,16 @@ classDiagram
 
 
 
-| Field               | What it holds                                             | Who writes it                                                                            |
-| ------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Field               | What it holds                                             | Who writes it                                                                                            |
+| ------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `messages`          | Chat history (appended, not replaced)                     | `starting_state`, `ingest_forms`, `assistant`, `tools`, `answer_faq`, `nudge_stall`, `fallback_closeout` |
-| `user_text`         | Patient input for this turn, with intake values stripped  | `starting_state`, then `ingest_forms` if labeled fields were present                     |
-| `redacted_text`     | Same text with SSN / email / phone / slash-dates stripped | `redact_pii`                                                                             |
-| `intent`            | `faq`, `book`, `forms`, `cancel`, or `unknown`            | `classify_intent`                                                                        |
-| `retrieved_context` | BM25 office notes for this turn                           | `retrieve_knowledge`                                                                     |
-| `pii_findings`      | Labels of PII types found (for logs / LangSmith)          | `redact_pii`                                                                             |
-| `stall_retries`     | How many times a stall reply was nudged                   | `nudge_stall` (starts at `0`)                                                            |
-| `forms_ingested`    | True when this turn saved a complete intake form          | `ingest_forms`                                                                           |
+| `user_text`         | Patient input for this turn, with intake values stripped  | `starting_state`, then `ingest_forms` if labeled fields were present                                     |
+| `redacted_text`     | Same text with SSN / email / phone / slash-dates stripped | `redact_pii`                                                                                             |
+| `intent`            | `faq`, `book`, `forms`, `cancel`, or `unknown`            | `classify_intent`                                                                                        |
+| `retrieved_context` | BM25 office notes for this turn                           | `retrieve_knowledge`                                                                                     |
+| `pii_findings`      | Labels of PII types found (for logs / LangSmith)          | `redact_pii`                                                                                             |
+| `stall_retries`     | How many times a stall reply was nudged                   | `nudge_stall` (starts at `0`)                                                                            |
+| `forms_ingested`    | True when this turn saved a complete intake form          | `ingest_forms`                                                                                           |
 
 
 Nodes only return the fields they change. `messages` uses LangGraph’s `add_messages` reducer so tool calls and replies accumulate instead of overwriting the turn.
@@ -111,13 +107,11 @@ The graph is explicit on purpose. Intake, redaction, intent, retrieval, and sche
 
 **Forms never reach the model.** `ingest_forms` parses labeled fields (Name, Date of birth, Phone, Insurance, Medical notes) and writes them to `office.json` before any LLM call. The assistant only sees a sanitized note plus the patient name. Booking tools also refuse new patients until `forms_complete` is true. That is a code rule, not a prompt suggestion.
 
-**JSON file instead of a hosted database.** One file is enough for a teaching demo: you can read the office, reset it from a seed, and point evals at a temp copy. No Postgres, no API server, no Docker Compose.
+**JSON file instead of a hosted database.** A json file was used as a replacement for the database for simplicity. You can read the office, reset it from a seed, and point evals at a temp copy.
 
 **BM25 instead of embeddings.** The knowledge base is a handful of markdown files. Keyword retrieval avoids a vector store and a second API. `dentists.md` is split on `##` headings so a bio lookup does not dump the whole staff file.
 
 **FAQ and scheduling are different paths.** Policy questions go to a grounded FAQ node that cannot call booking tools, so hours and insurance answers stay tied to retrieved notes. Book, cancel, and forms go to a tool-using assistant; dentists and slots come only from `office.json`.
-
-**Stall handling is in the graph.** Models often say “booking now” without a tool call. One nudge, then a fallback question, so the patient is not left hanging.
 
 **CLI, not an HTTP API.** The entry point is `python -m src.cli` so traces and evals stay local. LangSmith is the observability layer; `gpt-4o-mini` at temperature 0 keeps evals somewhat stable.
 
@@ -168,6 +162,8 @@ docker build -t riverside-dental-agent .
 docker run --rm -it --env-file .env riverside-dental-agent
 ```
 
+
+
 ## Try these prompts
 
 ```
@@ -210,24 +206,7 @@ What I would do with more time:
 - **Form validator.** Intake currently accepts any labeled strings. Validate date of birth, phone, insurance, and medical notes, and reject incomplete or malformed new-patient forms before they are written.
 - **Embeddings instead of BM25.** Swap BM25 for OpenAI embeddings (or similar) plus document fetching so retrieval ranks by meaning, not keyword overlap, and can pull the right section from larger office documents.
 - **Conversational intake, not only labeled fields.** Forms only parse `Name: … Date of birth: …` lines. A real front desk should collect missing fields over a few turns, confirm them, and never require the patient to paste a labeled blob.
-- **Stronger PII handling.** Redaction is a few regexes (SSN, email, phone, slash-dates). ISO dates, addresses, and medical notes still get through. Use a dedicated detector, encrypt PHI at rest, and keep it out of LangSmith traces.
-- **Identity and concurrency.** Patient lookup is a substring match, the JSON file has no write lock, and cancel-without-a-day drops every visit for that person. Use unique patient IDs, transactional booking so two callers cannot take the same slot, and cancel one appointment at a time unless they ask otherwise.
 - **Reschedule, waitlist, and a real calendar.** There is book and cancel only, against hardcoded dentist slots. Add reschedule, a waitlist, time zones, and a real calendar (or practice-management API) instead of a static `slots` list on each dentist.
-- **Preferred dentist and medical notes in scheduling.** Alex Rivera’s preferred dentist and stored medical notes are on file but unused when booking. Honor the preference on “any dentist,” and surface allergies or flags that should change the visit.
 - **Human handoff and confirmations.** Escalate to a person when the model stalls twice, the dentist is unknown, or the patient asks for one. Send a booking confirmation (email/SMS) with an appointment id instead of only a chat reply.
-- **LangGraph checkpointer and a real UI.** Conversation history lives in the CLI process and dies on quit. Persist threads, add a small web or voice front end, and stream tokens as they arrive instead of printing the final reply.
 - **Broader evals and unit tests.** The dataset is single-turn phrase checks. Add the two-turn new-patient path (forms, then book), cancel, PII-leak, and unknown-dentist cases; score with an LLM-as-judge; put unit tests on `parse_date`, form ingest, and booking rules; run them in CI.
 
-## Project layout
-
-```
-├── README.md                 this file
-├── FILE_GUIDE.md             readme for every file
-├── src/                      graph, tools, RAG, CLI
-├── data/office.json          live JSON database
-├── data/office.seed.json     reset snapshot
-├── data/knowledge/           RAG notes
-└── evals/                    dataset + runner
-```
-
-Folder readmes: `src/README.md`, `data/README.md`, `data/knowledge/README.md`, `evals/README.md`.
