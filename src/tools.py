@@ -6,21 +6,55 @@ WHY: LangChain tools the model can call. Each one is a thin wrapper over
 
 from __future__ import annotations
 
+from typing import Annotated
+
+from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
 
 from src import db
 
 
+def _human_text(state: dict) -> str:
+    parts = []
+    user_text = state.get("user_text") or ""
+    if user_text:
+        parts.append(user_text)
+    for message in state.get("messages") or []:
+        if not isinstance(message, HumanMessage):
+            continue
+        content = message.content
+        if isinstance(content, str) and content.strip():
+            parts.append(content)
+    return " ".join(parts)
+
+
+def _unstated_name_error(name: str, state: dict) -> str | None:
+    if db.patient_name_in_text(name, _human_text(state)):
+        return None
+    return (
+        f"No patient name given: '{name}' was not typed by the patient. "
+        "Ask for their name before looking anyone up or booking. "
+        "Do not assume they are Alex Rivera, Sam Ortiz, or anyone else on file."
+    )
+
+
 @tool
-def lookup_patient(name: str) -> str:
-    """Look up a patient by name. Use this before booking or cancelling."""
+def lookup_patient(
+    name: str,
+    state: Annotated[dict, InjectedState],
+) -> str:
+    """Look up a patient by name. Use this before booking or cancelling. Only look up a name the patient typed."""
+    unstated = _unstated_name_error(name, state)
+    if unstated:
+        return unstated
     patient = db.find_patient(name)
     if not patient:
         return (
             f"{name} is not on file. Treat them as a new patient. "
             "They must submit intake forms before an appointment can be booked. "
             "Ask them to send Name, Date of birth, Phone, Insurance, and Medical notes "
-            "as labeled fields in one line. Do not collect or echo those values."
+            "in one line (labeled or comma-separated). Do not collect or echo those values."
         )
     status = "complete" if patient.get("forms_complete") else "incomplete"
     preferred = patient.get("preferred_dentist_id") or "none"
@@ -71,8 +105,18 @@ def get_open_slots(dentist: str = "any", day: str = "", service: str = "") -> st
 
 
 @tool
-def book_appointment(patient_name: str, dentist: str, day: str, time: str, reason: str) -> str:
-    """Book an appointment. dentist can be a name or 'any'. day is today, tomorrow, YYYY-MM-DD, or a weekday. time is like 14:00 or 2pm."""
+def book_appointment(
+    patient_name: str,
+    dentist: str,
+    day: str,
+    time: str,
+    reason: str,
+    state: Annotated[dict, InjectedState],
+) -> str:
+    """Book an appointment. dentist can be a name or 'any'. day is today, tomorrow, YYYY-MM-DD, or a weekday. time is like 14:00 or 2pm. Only book a name the patient typed in this conversation; if they have not given a name, do not call this tool — ask for it."""
+    unstated = _unstated_name_error(patient_name, state)
+    if unstated:
+        return unstated
     result = db.book_appointment(patient_name, dentist, day, time, reason)
     if not result.get("ok"):
         suggestions = result.get("suggestions") or []
@@ -90,8 +134,15 @@ def book_appointment(patient_name: str, dentist: str, day: str, time: str, reaso
 
 
 @tool
-def cancel_appointment(patient_name: str, day: str = "") -> str:
-    """Cancel a patient's appointment. Pass today, tomorrow, a date, or a weekday to cancel one visit, or omit day to cancel all of theirs."""
+def cancel_appointment(
+    patient_name: str,
+    state: Annotated[dict, InjectedState],
+    day: str = "",
+) -> str:
+    """Cancel a patient's appointment. Pass today, tomorrow, a date, or a weekday to cancel one visit, or omit day to cancel all of theirs. Only cancel for a name the patient typed."""
+    unstated = _unstated_name_error(patient_name, state)
+    if unstated:
+        return unstated
     result = db.cancel_appointment(patient_name, day=day or None)
     if not result.get("ok"):
         return f"Cancel failed: {result.get('error')}"

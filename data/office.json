@@ -176,6 +176,28 @@
       "insurance": "united",
       "medical_notes": "previously had braces",
       "preferred_dentist_id": null
+    },
+    {
+      "id": "p-0cfb093e",
+      "name": "Henry Dott",
+      "is_new": true,
+      "phone": "1111111111",
+      "date_of_birth": "03/34/3244",
+      "forms_complete": true,
+      "insurance": "none",
+      "medical_notes": "none",
+      "preferred_dentist_id": null
+    },
+    {
+      "id": "p-27b55cc5",
+      "name": "Kennedy Trix",
+      "is_new": true,
+      "phone": "1111111111",
+      "date_of_birth": "02/04/1998",
+      "forms_complete": true,
+      "insurance": "none",
+      "medical_notes": "had braces",
+      "preferred_dentist_id": null
     }
   ],
   "appointments": [
@@ -228,6 +250,56 @@
       "date": "2026-08-25",
       "time": "11:00",
       "reason": "extraction"
+    },
+    {
+      "id": "apt-9786c0a2",
+      "patient_id": "p-rivera",
+      "patient_name": "Alex Rivera",
+      "dentist_id": "chen",
+      "dentist_name": "Dr. Sarah Chen",
+      "date": "2026-08-25",
+      "time": "14:00",
+      "reason": "cleaning"
+    },
+    {
+      "id": "apt-c4a3055a",
+      "patient_id": "p-rivera",
+      "patient_name": "Alex Rivera",
+      "dentist_id": "spuller",
+      "dentist_name": "Dr. Travis Spuller",
+      "date": "2026-08-26",
+      "time": "14:00",
+      "reason": "filling"
+    },
+    {
+      "id": "apt-1f8bbc1b",
+      "patient_id": "p-0cfb093e",
+      "patient_name": "Henry Dott",
+      "dentist_id": "chen",
+      "dentist_name": "Dr. Sarah Chen",
+      "date": "2026-08-26",
+      "time": "15:00",
+      "reason": "cleaning"
+    },
+    {
+      "id": "apt-7b5df011",
+      "patient_id": "p-27b55cc5",
+      "patient_name": "Kennedy Trix",
+      "dentist_id": "chen",
+      "dentist_name": "Dr. Sarah Chen",
+      "date": "2026-08-25",
+      "time": "15:00",
+      "reason": "cleaning"
+    },
+    {
+      "id": "apt-0965c31f",
+      "patient_id": "p-0cfb093e",
+      "patient_name": "Henry Dott",
+      "dentist_id": "spuller",
+      "dentist_name": "Dr. Travis Spuller",
+      "date": "2026-08-26",
+      "time": "16:00",
+      "reason": "cleaning"
     }
   ]
 }

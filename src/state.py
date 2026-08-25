@@ -23,3 +23,4 @@ class AgentState(TypedDict):
     pii_findings: list[str]
     stall_retries: int
     forms_ingested: bool
+    pending_intake: dict

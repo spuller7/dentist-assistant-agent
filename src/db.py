@@ -150,6 +150,74 @@ def find_patient(name: str, office: dict[str, Any] | None = None) -> dict[str, A
     return None
 
 
+_PLACEHOLDER_NAMES = {
+    "any",
+    "anyone",
+    "me",
+    "i",
+    "myself",
+    "patient",
+    "the patient",
+    "new patient",
+    "caller",
+    "user",
+    "unknown",
+    "n a",
+    "na",
+    "none",
+}
+
+
+def _dentist_name_tokens(office: dict[str, Any] | None = None) -> set[str]:
+    office = office or load_office()
+    tokens: set[str] = set()
+    skip = {"dr", "doctor"}
+    for dentist in office["dentists"]:
+        tokens.update(part for part in _norm(dentist["name"]).split() if part not in skip)
+        for alias in dentist.get("aliases") or []:
+            tokens.update(part for part in _norm(alias).split() if part not in skip)
+    return tokens
+
+
+def _patient_first_names(office: dict[str, Any] | None = None) -> set[str]:
+    office = office or load_office()
+    names: set[str] = set()
+    for patient in office["patients"]:
+        parts = _norm(patient["name"]).split()
+        if parts:
+            names.add(parts[0])
+    return names
+
+
+def patient_name_in_text(
+    patient_name: str,
+    text: str,
+    office: dict[str, Any] | None = None,
+) -> bool:
+    """True when the caller typed this patient name (full name or first name).
+
+    A dentist's name in the message (e.g. 'Dr. Spuller') does not count as the
+    patient's name. Last name alone is not enough.
+    """
+    name = _norm(patient_name)
+    blob = _norm(text)
+    if not name or not blob or name in _PLACEHOLDER_NAMES:
+        return False
+    if " " in name and name in blob:
+        return True
+    parts = [part for part in name.split() if part not in {"dr", "doctor"}]
+    if not parts:
+        return False
+    first = parts[0]
+    tokens = set(blob.split())
+    if len(first) < 3 or first not in tokens:
+        return False
+    office = office or load_office()
+    if first in _dentist_name_tokens(office) and first not in _patient_first_names(office):
+        return False
+    return True
+
+
 def today_context(now: datetime | None = None) -> str:
     """Human-readable date and time line for agent system prompts."""
     now = now or datetime.now()

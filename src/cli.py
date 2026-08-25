@@ -77,8 +77,8 @@ def _print_turn_footer(final_state: dict) -> None:
         print(f"(logged as: {redacted})")
 
 
-def run_turn(graph, user_text: str, history: list, turn: int) -> list:
-    state = starting_state(user_text)
+def run_turn(graph, user_text: str, history: list, turn: int, pending_intake: dict | None = None) -> tuple[list, dict]:
+    state = starting_state(user_text, pending_intake=pending_intake)
     if history:
         state["messages"] = [*history, *state["messages"]]
 
@@ -97,11 +97,12 @@ def run_turn(graph, user_text: str, history: list, turn: int) -> list:
         print(_last_patient_reply(final_state.get("messages", [])), end="", flush=True)
 
     print("\n")
+    pending = dict((final_state or {}).get("pending_intake") or {})
     if not final_state:
-        return state["messages"]
+        return state["messages"], pending
 
     _print_turn_footer(final_state)
-    return final_state.get("messages", state["messages"])
+    return final_state.get("messages", state["messages"]), pending
 
 
 def chat_loop() -> None:
@@ -111,6 +112,7 @@ def chat_loop() -> None:
 
     graph = build_graph()
     history: list = []
+    pending_intake: dict = {}
     turn = 1
 
     print("Welcome to Riverside Family Dental.")
@@ -138,10 +140,11 @@ def chat_loop() -> None:
         if user_text.lower() == "reset":
             reset_db()
             history = []
+            pending_intake = {}
             print("Database reset. Conversation cleared.\n")
             continue
 
-        history = run_turn(graph, user_text, history, turn)
+        history, pending_intake = run_turn(graph, user_text, history, turn, pending_intake)
         turn += 1
 
 

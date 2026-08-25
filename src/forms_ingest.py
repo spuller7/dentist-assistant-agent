@@ -1,8 +1,10 @@
 """
 FILE: src/forms_ingest.py
-WHY: Save labeled new-patient intake fields to the JSON database before
-     any LLM call, so DOB / phone / insurance / medical notes never reach
-     the model. The assistant only sees a sanitized note plus the name.
+WHY: Save new-patient intake fields to the JSON database before any LLM
+     call, so DOB / phone / insurance / medical notes never reach the model.
+     Accepts labeled fields, a comma-separated line in the same order, or a
+     follow-up value for whatever is still missing. The assistant only sees a
+     sanitized note plus the patient name.
 """
 
 from __future__ import annotations
@@ -49,6 +51,17 @@ _LABEL_RE = re.compile(
     r")\s*:\s*"
 )
 
+_DOB_RE = re.compile(r"^(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})$")
+_NAME_RE = re.compile(
+    r"^[A-Za-z][A-Za-z.'\-]+(?:\s+[A-Za-z][A-Za-z.'\-]+)+$"
+)
+_NEW_REQUEST_RE = re.compile(
+    r"(?i)\b("
+    r"book|cancel|appointment|reschedule|hours|available|"
+    r"medicaid|dentist|cleaning|filling|braces|invisalign"
+    r")\b"
+)
+
 
 @dataclass(frozen=True)
 class IngestResult:
@@ -89,10 +102,49 @@ def strip_labeled_spans(text: str, spans: list[tuple[int, int]]) -> str:
     return cleaned
 
 
+def parse_unlabeled_fields(text: str) -> dict[str, str]:
+    """Parse 'Name, DOB, Phone, Insurance[, Medical notes]' when unlabeled."""
+    parts = [part.strip().rstrip(".,;") for part in text.split(",") if part.strip()]
+    if len(parts) < 4:
+        return {}
+    if not _NAME_RE.fullmatch(parts[0]):
+        return {}
+    if not _DOB_RE.fullmatch(parts[1]):
+        return {}
+    phone_digits = re.sub(r"\D", "", parts[2])
+    if len(phone_digits) < 10:
+        return {}
+    fields = {
+        "name": parts[0],
+        "date_of_birth": parts[1],
+        "phone": parts[2],
+        "insurance": parts[3],
+    }
+    if len(parts) >= 5:
+        fields["medical_notes"] = ", ".join(parts[4:])
+    return fields
+
+
+def parse_followup_fields(text: str, missing: tuple[str, ...]) -> dict[str, str]:
+    """Fill remaining intake fields from a short follow-up reply."""
+    stripped = text.strip().rstrip(".,;")
+    if not stripped or not missing or "?" in stripped:
+        return {}
+    if _NEW_REQUEST_RE.search(stripped) and len(missing) != 1:
+        return {}
+    parts = [part.strip().rstrip(".,;") for part in stripped.split(",") if part.strip()]
+    if len(parts) == len(missing):
+        return dict(zip(missing, parts))
+    if len(missing) == 1 and not _NEW_REQUEST_RE.search(stripped):
+        return {missing[0]: stripped}
+    return {}
+
+
 def _sanitized_note(fields: dict[str, str], missing: tuple[str, ...], remainder: str) -> str:
     if missing:
         labels = ", ".join(_FIELD_LABELS[key] for key in missing)
-        prefix = f"[Intake incomplete, missing: {labels}.]"
+        who = f" for {fields['name']}" if fields.get("name") else ""
+        prefix = f"[Intake incomplete{who}, missing: {labels}.]"
     else:
         name = fields["name"]
         prefix = f"[Intake saved for {name}; forms_complete=true.]"
@@ -101,30 +153,49 @@ def _sanitized_note(fields: dict[str, str], missing: tuple[str, ...], remainder:
     return prefix
 
 
-def ingest_labeled_forms(text: str) -> IngestResult | None:
-    """Parse labeled intake fields. Save when complete; always strip values.
+def ingest_forms(text: str, pending: dict[str, str] | None = None) -> IngestResult | None:
+    """Merge this turn's intake with any pending fields and save when complete.
 
-    Returns None when the message has no labeled intake fields.
+    Returns None when the message is not intake (and no follow-up applied).
     """
-    fields, spans = parse_labeled_fields(text)
-    if not fields:
+    pending = {key: value for key, value in (pending or {}).items() if value}
+    labeled, spans = parse_labeled_fields(text)
+    unlabeled = {} if labeled else parse_unlabeled_fields(text)
+    missing_before = tuple(key for key in REQUIRED_FIELDS if not pending.get(key))
+    followup = {}
+    if pending and not labeled and not unlabeled:
+        followup = parse_followup_fields(text, missing_before)
+
+    if not labeled and not unlabeled and not followup:
         return None
 
-    missing = tuple(key for key in REQUIRED_FIELDS if not fields.get(key))
-    remainder = strip_labeled_spans(text, spans)
+    merged = {**pending, **unlabeled, **labeled, **followup}
+    merged = {key: value.strip() for key, value in merged.items() if value and value.strip()}
+    missing = tuple(key for key in REQUIRED_FIELDS if not merged.get(key))
+
+    if labeled:
+        remainder = strip_labeled_spans(text, spans)
+    else:
+        remainder = ""
+
     saved = False
     if not missing:
         submit_forms(
-            fields["name"],
-            fields["date_of_birth"],
-            fields["phone"],
-            fields["insurance"],
-            fields["medical_notes"],
+            merged["name"],
+            merged["date_of_birth"],
+            merged["phone"],
+            merged["insurance"],
+            merged["medical_notes"],
         )
         saved = True
     return IngestResult(
-        fields=fields,
+        fields=merged,
         missing=missing,
         saved=saved,
-        sanitized=_sanitized_note(fields, missing, remainder),
+        sanitized=_sanitized_note(merged, missing, remainder),
     )
+
+
+def ingest_labeled_forms(text: str) -> IngestResult | None:
+    """Parse labeled intake fields. Save when complete; always strip values."""
+    return ingest_forms(text)

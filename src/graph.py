@@ -22,7 +22,7 @@ from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel, Field
 
 from src.db import stated_service, today_context
-from src.forms_ingest import ingest_labeled_forms
+from src.forms_ingest import ingest_forms
 from src.guardrails import redact_pii
 from src.llm import get_llm
 from src.rag import format_docs, retrieve
@@ -74,22 +74,31 @@ Rules:
 - After the service is known, recommend the matching specialty and list every
   time the tool returned for that day. Do not omit hours. Do not offer
   dentists who were not in the tool result.
+- Never assume who is talking. Names in office notes (Alex Rivera, Sam Ortiz)
+  are examples of returning patients, not the current caller. Do not look them
+  up or book them unless the patient typed that name in this conversation.
+- If they have not typed a patient name, ask for it before lookup_patient or
+  book_appointment. A time, dentist, or visit type is not a name.
 - If they already gave a patient name, a dentist or 'any', a day, a time, and
-  a visit type, look up the patient and book in this turn. Do not ask them to
+  a visit type, look up that name and book in this turn. Do not ask them to
   re-confirm the same slot they just requested.
 - Otherwise do not book until they confirm a slot and give a patient name.
 - If a named dentist is not on staff, say there is no dentist by that name, list who works here, and offer to book one of them. Do not say the calendar is full.
 - New patients must submit forms before you book. Intake is saved
-  automatically when they send labeled fields (Name, Date of birth, Phone,
-  Insurance, Medical notes) in one line. You never receive those values.
-  If lookup_patient says they are not on file, ask them to send that labeled
-  line. Do not collect, repeat, or invent the field values. Do not book yet.
+  automatically before you see it: labeled fields, a comma-separated line
+  (Name, Date of birth, Phone, Insurance, Medical notes), or a follow-up
+  for a missing field. You never receive those values.
+  If lookup_patient says they are not on file, ask for the five fields.
+  Do not collect, repeat, or invent the field values. Do not book yet.
 - If the user message says intake was saved and forms_complete=true, confirm
-  the forms are on file for that patient. They can now book. If they also
-  asked to book, look them up and continue.
+  the forms are on file for that patient. They can now book. Look them up
+  and continue with any dentist, day, time, and visit already chosen.
+  Do not ask them to resubmit forms.
 - If the user message says intake is incomplete, ask only for the missing
-  field labels listed there. Do not ask them to paste values you already have.
-- Returning patients: Alex Rivera and Sam Ortiz already have forms on file.
+  field listed there. They can reply with just that value. Do not ask them
+  to paste values you already have.
+- Look up the name they give. Some returning patients already have forms on
+  file. Never treat an unnamed caller as a chart on file.
 - After a successful booking or form save, confirm the facts (tool result or
   the intake-saved note). Do not echo DOB, phone, insurance, or medical notes.
 - Every reply the patient hears must either confirm a completed action
@@ -113,13 +122,15 @@ class IntentDecision(BaseModel):
 
 def ingest_forms_node(state: AgentState) -> dict:
     text = state.get("user_text") or ""
-    result = ingest_labeled_forms(text)
+    pending = dict(state.get("pending_intake") or {})
+    result = ingest_forms(text, pending=pending)
     if result is None:
-        return {"forms_ingested": False}
+        return {"forms_ingested": False, "pending_intake": pending}
 
     updates: dict = {
         "user_text": result.sanitized,
         "forms_ingested": result.saved,
+        "pending_intake": {} if result.saved else result.fields,
     }
     messages = state.get("messages") or []
     last_human = next(
@@ -310,6 +321,11 @@ def _tool_closeout_nudge(messages: list) -> str:
             "\nRequired next step: tell the patient the action is complete using "
             "the tool facts. Do not ask them to wait."
         )
+    if "no patient name given" in lowered:
+        return (
+            "\nAsk for the patient's name. Do not look up or book Alex Rivera, "
+            "Sam Ortiz, or anyone else on file until they type a name."
+        )
     if "booking failed" in lowered or "cancel failed" in lowered:
         return (
             "\nTell the patient the action did not go through and ask what "
@@ -318,14 +334,15 @@ def _tool_closeout_nudge(messages: list) -> str:
     if "not on file" in lowered:
         return (
             "\nAsk the patient to send Name, Date of birth, Phone, Insurance, "
-            "and Medical notes as labeled fields in one line. Do not collect or "
-            "echo those values. Do not book yet."
+            "and Medical notes in one line (labeled or comma-separated). "
+            "Do not collect or echo those values. Do not book yet."
         )
     if "forms=complete" in lowered or "already on file with completed forms" in lowered:
         return (
-            "\nIf this conversation already has a dentist, day, time, and visit type, "
-            "call book_appointment now. Do not say you will book later. "
-            "Confirm only after the tool returns."
+            "\nIf this conversation already has a patient name they typed, a "
+            "dentist, day, time, and visit type, call book_appointment now. "
+            "If they have not typed a name, ask for it. Do not assume they are "
+            "Alex Rivera or Sam Ortiz. Confirm only after the tool returns."
         )
     return (
         "\nRequired: your reply must either confirm a completed action or "
@@ -375,13 +392,17 @@ def assistant_node(state: AgentState) -> dict:
     extra = _booking_nudge(user_text, has_tool_result)
     if state.get("forms_ingested") and not has_tool_result:
         extra += (
-            "\nRequired: confirm that intake forms are saved and on file for this "
-            "patient. They can now book. Do not ask for the same form fields again."
+            "\nRequired: intake is already saved with forms_complete=true. "
+            "Look up the patient named in the intake-saved note. Confirm the "
+            "forms are on file. If a dentist, day, time, and visit type are "
+            "already in this conversation, call book_appointment now. "
+            "Do not ask them to resubmit forms."
         )
     elif (user_text.startswith("[Intake incomplete") and not has_tool_result):
         extra += (
-            "\nRequired: ask only for the missing field labels listed in the user "
-            "message. Do not invent values and do not book."
+            "\nRequired: ask only for the missing field listed in the user "
+            "message. They can reply with just that value. Do not invent "
+            "values and do not book."
         )
     if _recent_tool_text(state["messages"]):
         extra += _tool_closeout_nudge(state["messages"])
@@ -451,7 +472,7 @@ def build_graph():
     return graph.compile()
 
 
-def starting_state(user_text: str) -> AgentState:
+def starting_state(user_text: str, pending_intake: dict | None = None) -> AgentState:
     return {
         "messages": [HumanMessage(content=user_text, id=str(uuid.uuid4()))],
         "user_text": user_text,
@@ -461,4 +482,5 @@ def starting_state(user_text: str) -> AgentState:
         "pii_findings": [],
         "stall_retries": 0,
         "forms_ingested": False,
+        "pending_intake": dict(pending_intake or {}),
     }

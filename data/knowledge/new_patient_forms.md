@@ -10,13 +10,19 @@ Required form fields:
 4. Dental insurance name, or "none"
 5. Brief medical notes (allergies, current medications, or "none")
 
-Forms take about 15 minutes. In this demo, labeled intake fields (Name, Date of
-birth, Phone, Insurance, Medical notes) are saved to the office database before
-the language model sees the message. The assistant never receives those values.
+Forms take about 15 minutes. In this demo, intake is saved to the office
+database before the language model sees it. Patients may send:
+
+- Labeled fields: `Name: … Date of birth: … Phone: … Insurance: … Medical notes: …`
+- The same five values in one comma-separated line, in that order
+- A follow-up with only the missing field (for example `none` for medical notes)
+
+The assistant never receives date of birth, phone, insurance, or medical notes.
 
 Until forms are marked complete:
 
 - The agent must not book a first visit.
-- Ask the patient to send the required fields in one labeled line.
+- Ask only for the fields that are still missing.
 
-Returning patients already on file (Alex Rivera, Sam Ortiz) do not need to resubmit forms.
+Returning patients who are already on file do not need to resubmit forms.
+Confirm that by looking up the name they provide. Never assume who is calling.
