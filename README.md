@@ -105,6 +105,22 @@ classDiagram
 
 Nodes only return the fields they change. `messages` uses LangGraph’s `add_messages` reducer so tool calls and replies accumulate instead of overwriting the turn.
 
+## Design notes
+
+The graph is explicit on purpose. Intake, redaction, intent, retrieval, and scheduling are separate LangGraph nodes so a reviewer can see what ran, not infer it from one prompt.
+
+**Forms never reach the model.** `ingest_forms` parses labeled fields (Name, Date of birth, Phone, Insurance, Medical notes) and writes them to `office.json` before any LLM call. The assistant only sees a sanitized note plus the patient name. Booking tools also refuse new patients until `forms_complete` is true. That is a code rule, not a prompt suggestion.
+
+**JSON file instead of a hosted database.** One file is enough for a teaching demo: you can read the office, reset it from a seed, and point evals at a temp copy. No Postgres, no API server, no Docker Compose.
+
+**BM25 instead of embeddings.** The knowledge base is a handful of markdown files. Keyword retrieval avoids a vector store and a second API. `dentists.md` is split on `##` headings so a bio lookup does not dump the whole staff file.
+
+**FAQ and scheduling are different paths.** Policy questions go to a grounded FAQ node that cannot call booking tools, so hours and insurance answers stay tied to retrieved notes. Book, cancel, and forms go to a tool-using assistant; dentists and slots come only from `office.json`.
+
+**Stall handling is in the graph.** Models often say “booking now” without a tool call. One nudge, then a fallback question, so the patient is not left hanging.
+
+**CLI, not an HTTP API.** The entry point is `python -m src.cli` so traces and evals stay local. LangSmith is the observability layer; `gpt-4o-mini` at temperature 0 keeps evals somewhat stable.
+
 ## Quickstart
 
 You need Python 3.11+ and two API keys: OpenAI (model calls) and LangSmith (traces / evals).
@@ -185,6 +201,22 @@ Open [https://smith.langchain.com](https://smith.langchain.com) and filter by pr
 - `appointment_created` — whether `office.json` should gain a new visit
 
 The runner uses a temp copy of the database so your demo file is not left dirty.
+
+## Improvements
+
+What I would do with more time:
+
+- **Express API, hosted database, and MCP.** Replace the JSON file and CLI with a proper Express API, a hosted database, and a real MCP interface so other agents can call lookup / book / cancel as tools instead of going through this process.
+- **Form validator.** Intake currently accepts any labeled strings. Validate date of birth, phone, insurance, and medical notes, and reject incomplete or malformed new-patient forms before they are written.
+- **Embeddings instead of BM25.** Swap BM25 for OpenAI embeddings (or similar) plus document fetching so retrieval ranks by meaning, not keyword overlap, and can pull the right section from larger office documents.
+- **Conversational intake, not only labeled fields.** Forms only parse `Name: … Date of birth: …` lines. A real front desk should collect missing fields over a few turns, confirm them, and never require the patient to paste a labeled blob.
+- **Stronger PII handling.** Redaction is a few regexes (SSN, email, phone, slash-dates). ISO dates, addresses, and medical notes still get through. Use a dedicated detector, encrypt PHI at rest, and keep it out of LangSmith traces.
+- **Identity and concurrency.** Patient lookup is a substring match, the JSON file has no write lock, and cancel-without-a-day drops every visit for that person. Use unique patient IDs, transactional booking so two callers cannot take the same slot, and cancel one appointment at a time unless they ask otherwise.
+- **Reschedule, waitlist, and a real calendar.** There is book and cancel only, against hardcoded dentist slots. Add reschedule, a waitlist, time zones, and a real calendar (or practice-management API) instead of a static `slots` list on each dentist.
+- **Preferred dentist and medical notes in scheduling.** Alex Rivera’s preferred dentist and stored medical notes are on file but unused when booking. Honor the preference on “any dentist,” and surface allergies or flags that should change the visit.
+- **Human handoff and confirmations.** Escalate to a person when the model stalls twice, the dentist is unknown, or the patient asks for one. Send a booking confirmation (email/SMS) with an appointment id instead of only a chat reply.
+- **LangGraph checkpointer and a real UI.** Conversation history lives in the CLI process and dies on quit. Persist threads, add a small web or voice front end, and stream tokens as they arrive instead of printing the final reply.
+- **Broader evals and unit tests.** The dataset is single-turn phrase checks. Add the two-turn new-patient path (forms, then book), cancel, PII-leak, and unknown-dentist cases; score with an LLM-as-judge; put unit tests on `parse_date`, form ingest, and booking rules; run them in CI.
 
 ## Project layout
 
