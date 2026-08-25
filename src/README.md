@@ -9,10 +9,11 @@ Application code. Start with `state.py` and `graph.py`.
 | `paths.py` | Root / data / db locations, including the eval override. |
 | `db.py` | JSON database helpers used by every scheduling tool. |
 | `guardrails.py` | PII redaction for logs and LangSmith metadata. |
+| `forms_ingest.py` | Parse labeled intake fields and save them before any LLM call. |
 | `rag.py` | LangChain BM25 retriever over `data/knowledge`. |
 | `llm.py` | LangChain `ChatOpenAI` factory. |
 | `state.py` | LangGraph state schema. |
-| `tools.py` | LangChain tools (patient lookup, slots, book, forms, cancel). |
+| `tools.py` | LangChain tools (patient lookup, slots, book, cancel). |
 | `graph.py` | Nodes, edges, and compile step. |
 | `cli.py` | Streaming CLI. |
 | `README.md` | This folder index. |

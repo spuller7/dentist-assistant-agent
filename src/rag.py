@@ -3,8 +3,9 @@ FILE: src/rag.py
 WHY: LangChain RAG over a tiny office knowledge base. BM25 is used so the
      demo does not need a vector database or an embeddings API.
 
-     Each markdown file is split on ## headings into segments. Every segment
-     keeps the source filename so retrieved notes can be labeled by origin.
+     dentists.md is split on ## headings (one segment per dentist). Other
+     knowledge files are one document each. Every document keeps the source
+     filename so retrieved notes can be labeled by origin.
 """
 
 from __future__ import annotations
@@ -16,6 +17,8 @@ from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 
 from src.paths import KNOWLEDGE_DIR
+
+DENTISTS_FILE = "dentists.md"
 
 
 def _tokenize(text: str) -> list[str]:
@@ -29,8 +32,16 @@ def _heading_from_line(line: str) -> str | None:
     return None
 
 
-def split_markdown_segments(text: str) -> list[tuple[str, str]]:
-    """Split markdown on ## headings. Returns (section_title, segment_text)."""
+def _first_heading(text: str, fallback: str) -> str:
+    for line in text.splitlines():
+        heading = _heading_from_line(line)
+        if heading:
+            return heading
+    return fallback
+
+
+def split_dentists_segments(text: str) -> list[tuple[str, str]]:
+    """Split dentists.md on ## headings. Returns (section_title, segment_text)."""
     chunks: list[list[str]] = [[]]
     headings: list[str] = [""]
 
@@ -60,7 +71,11 @@ def load_knowledge_docs() -> list[Document]:
             continue
         title = path.stem.replace("_", " ")
         text = path.read_text(encoding="utf-8")
-        for index, (section, content) in enumerate(split_markdown_segments(text)):
+        if path.name == DENTISTS_FILE:
+            segments = split_dentists_segments(text)
+        else:
+            segments = [(_first_heading(text, title), text.strip())]
+        for index, (section, content) in enumerate(segments):
             docs.append(
                 Document(
                     page_content=content,

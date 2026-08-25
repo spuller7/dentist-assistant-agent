@@ -4,7 +4,7 @@ WHY: This is the LangGraph control flow. Nodes update state; conditional
      edges decide the next step. Read this file to see how a turn moves.
 
 Flow:
-    START -> redact_pii -> classify_intent -> retrieve_knowledge
+    START -> ingest_forms -> redact_pii -> classify_intent -> retrieve_knowledge
           -> (faq) answer_faq -> END
           -> (book/forms/cancel/unknown) assistant <-> tools
           -> if the assistant stalled ("booking now") without a tool call,
@@ -13,6 +13,7 @@ Flow:
 
 from __future__ import annotations
 
+import uuid
 from typing import Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -21,6 +22,7 @@ from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel, Field
 
 from src.db import stated_service, today_context
+from src.forms_ingest import ingest_labeled_forms
 from src.guardrails import redact_pii
 from src.llm import get_llm
 from src.rag import format_docs, retrieve
@@ -41,7 +43,9 @@ Be brief and specific. Give a complete answer, or ask one clarifying question.
 ASSISTANT_SYSTEM = """{today}
 
 You are the front-desk assistant for Riverside Family Dental.
-You schedule visits, collect new-patient forms, and answer office questions.
+You schedule visits and answer office questions. New-patient intake fields
+are saved before you see the message. You never receive date of birth, phone,
+insurance, or medical notes.
 
 Rules:
 - Use tools. Do not invent open slots, dentists, or patient records.
@@ -75,11 +79,19 @@ Rules:
   re-confirm the same slot they just requested.
 - Otherwise do not book until they confirm a slot and give a patient name.
 - If a named dentist is not on staff, say there is no dentist by that name, list who works here, and offer to book one of them. Do not say the calendar is full.
-- New patients must submit forms before you book. If lookup_patient says they
-  are not on file, call submit_new_patient_forms when you have the fields.
-  If fields are missing, ask for them. Do not book yet.
+- New patients must submit forms before you book. Intake is saved
+  automatically when they send labeled fields (Name, Date of birth, Phone,
+  Insurance, Medical notes) in one line. You never receive those values.
+  If lookup_patient says they are not on file, ask them to send that labeled
+  line. Do not collect, repeat, or invent the field values. Do not book yet.
+- If the user message says intake was saved and forms_complete=true, confirm
+  the forms are on file for that patient. They can now book. If they also
+  asked to book, look them up and continue.
+- If the user message says intake is incomplete, ask only for the missing
+  field labels listed there. Do not ask them to paste values you already have.
 - Returning patients: Alex Rivera and Sam Ortiz already have forms on file.
-- After a successful booking or form save, confirm the facts from the tool.
+- After a successful booking or form save, confirm the facts (tool result or
+  the intake-saved note). Do not echo DOB, phone, insurance, or medical notes.
 - Every reply the patient hears must either confirm a completed action
   (booked, cancelled, forms saved) with the tool facts, or ask them a
   specific question so they know what to say next.
@@ -99,20 +111,46 @@ class IntentDecision(BaseModel):
     )
 
 
+def ingest_forms_node(state: AgentState) -> dict:
+    text = state.get("user_text") or ""
+    result = ingest_labeled_forms(text)
+    if result is None:
+        return {"forms_ingested": False}
+
+    updates: dict = {
+        "user_text": result.sanitized,
+        "forms_ingested": result.saved,
+    }
+    messages = state.get("messages") or []
+    last_human = next(
+        (message for message in reversed(messages) if isinstance(message, HumanMessage)),
+        None,
+    )
+    if last_human is not None:
+        updates["messages"] = [
+            HumanMessage(content=result.sanitized, id=getattr(last_human, "id", None))
+        ]
+    return updates
+
+
 def redact_pii_node(state: AgentState) -> dict:
     cleaned, findings = redact_pii(state["user_text"])
     return {"redacted_text": cleaned, "pii_findings": findings}
 
 
 def classify_intent_node(state: AgentState) -> dict:
+    text = state.get("user_text") or ""
+    if state.get("forms_ingested") or text.startswith("[Intake incomplete"):
+        return {"intent": "forms"}
+
     llm = get_llm().with_structured_output(IntentDecision)
     decision = llm.invoke(
         [
             SystemMessage(
                 content=(
                     "Classify the front-desk request. "
-                    "Use forms only when the caller is submitting intake field values "
-                    "(name, date of birth, phone, insurance, medical notes). "
+                    "Use forms when the message says intake was saved, intake is "
+                    "incomplete, or the caller is filing new-patient forms. "
                     "Use faq when they ask whether forms are required, or about hours, "
                     "policy, insurance, or dentist bios. "
                     "Use book when they want an appointment, the next available time, "
@@ -279,8 +317,9 @@ def _tool_closeout_nudge(messages: list) -> str:
         )
     if "not on file" in lowered:
         return (
-            "\nAsk for any missing intake fields, or call submit_new_patient_forms. "
-            "Do not book yet."
+            "\nAsk the patient to send Name, Date of birth, Phone, Insurance, "
+            "and Medical notes as labeled fields in one line. Do not collect or "
+            "echo those values. Do not book yet."
         )
     if "forms=complete" in lowered or "already on file with completed forms" in lowered:
         return (
@@ -334,6 +373,16 @@ def assistant_node(state: AgentState) -> dict:
     else:
         llm = llm.bind_tools(SCHEDULING_TOOLS)
     extra = _booking_nudge(user_text, has_tool_result)
+    if state.get("forms_ingested") and not has_tool_result:
+        extra += (
+            "\nRequired: confirm that intake forms are saved and on file for this "
+            "patient. They can now book. Do not ask for the same form fields again."
+        )
+    elif (user_text.startswith("[Intake incomplete") and not has_tool_result):
+        extra += (
+            "\nRequired: ask only for the missing field labels listed in the user "
+            "message. Do not invent values and do not book."
+        )
     if _recent_tool_text(state["messages"]):
         extra += _tool_closeout_nudge(state["messages"])
     if state.get("stall_retries"):
@@ -366,6 +415,7 @@ def fallback_closeout_node(state: AgentState) -> dict:
 
 def build_graph():
     graph = StateGraph(AgentState)
+    graph.add_node("ingest_forms", ingest_forms_node)
     graph.add_node("redact_pii", redact_pii_node)
     graph.add_node("classify_intent", classify_intent_node)
     graph.add_node("retrieve_knowledge", retrieve_knowledge_node)
@@ -375,7 +425,8 @@ def build_graph():
     graph.add_node("nudge_stall", nudge_stall_node)
     graph.add_node("fallback_closeout", fallback_closeout_node)
 
-    graph.add_edge(START, "redact_pii")
+    graph.add_edge(START, "ingest_forms")
+    graph.add_edge("ingest_forms", "redact_pii")
     graph.add_edge("redact_pii", "classify_intent")
     graph.add_edge("classify_intent", "retrieve_knowledge")
     graph.add_conditional_edges(
@@ -402,11 +453,12 @@ def build_graph():
 
 def starting_state(user_text: str) -> AgentState:
     return {
-        "messages": [HumanMessage(content=user_text)],
+        "messages": [HumanMessage(content=user_text, id=str(uuid.uuid4()))],
         "user_text": user_text,
         "redacted_text": "",
         "intent": "unknown",
         "retrieved_context": "",
         "pii_findings": [],
         "stall_retries": 0,
+        "forms_ingested": False,
     }

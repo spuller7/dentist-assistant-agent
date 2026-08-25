@@ -18,14 +18,16 @@ def lookup_patient(name: str) -> str:
     if not patient:
         return (
             f"{name} is not on file. Treat them as a new patient. "
-            "They must submit intake forms before an appointment can be booked."
+            "They must submit intake forms before an appointment can be booked. "
+            "Ask them to send Name, Date of birth, Phone, Insurance, and Medical notes "
+            "as labeled fields in one line. Do not collect or echo those values."
         )
     status = "complete" if patient.get("forms_complete") else "incomplete"
     preferred = patient.get("preferred_dentist_id") or "none"
     return (
         f"Found {patient['name']} (id={patient['id']}). "
         f"new_patient={patient.get('is_new', False)}, forms={status}, "
-        f"preferred_dentist={preferred}, insurance={patient.get('insurance', 'unknown')}."
+        f"preferred_dentist={preferred}."
     )
 
 
@@ -69,21 +71,6 @@ def get_open_slots(dentist: str = "any", day: str = "", service: str = "") -> st
 
 
 @tool
-def submit_new_patient_forms(
-    name: str,
-    date_of_birth: str,
-    phone: str,
-    insurance: str,
-    medical_notes: str,
-) -> str:
-    """Save new-patient intake forms. Required before a first appointment can be booked."""
-    result = db.submit_forms(name, date_of_birth, phone, insurance, medical_notes)
-    if result.get("already_on_file"):
-        return f"{name} is already on file with completed forms."
-    return f"Forms saved for {name}. They can now book an appointment."
-
-
-@tool
 def book_appointment(patient_name: str, dentist: str, day: str, time: str, reason: str) -> str:
     """Book an appointment. dentist can be a name or 'any'. day is today, tomorrow, YYYY-MM-DD, or a weekday. time is like 14:00 or 2pm."""
     result = db.book_appointment(patient_name, dentist, day, time, reason)
@@ -116,7 +103,6 @@ SCHEDULING_TOOLS = [
     lookup_patient,
     list_dentists,
     get_open_slots,
-    submit_new_patient_forms,
     book_appointment,
     cancel_appointment,
 ]

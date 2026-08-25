@@ -66,7 +66,13 @@ def _print_turn_footer(final_state: dict) -> None:
     redacted = final_state.get("redacted_text") or ""
     findings = final_state.get("pii_findings") or []
     intent = final_state.get("intent")
-    print(f"(intent={intent}" + (f", redacted PII={','.join(findings)}" if findings else "") + ")")
+    ingested = final_state.get("forms_ingested")
+    extras = []
+    if findings:
+        extras.append(f"redacted PII={','.join(findings)}")
+    if ingested:
+        extras.append("forms_ingested")
+    print(f"(intent={intent}" + (f", {', '.join(extras)}" if extras else "") + ")")
     if findings:
         print(f"(logged as: {redacted})")
 

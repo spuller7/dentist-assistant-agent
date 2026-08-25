@@ -22,3 +22,4 @@ class AgentState(TypedDict):
     retrieved_context: str
     pii_findings: list[str]
     stall_retries: int
+    forms_ingested: bool

@@ -27,38 +27,18 @@ Dentists on staff:
 | Dr. James Okonkwo  | Oral surgery | Tue, Thu      |
 
 
-New patients are not booked until forms are saved. That rule is enforced in the JSON tools, not only in the prompt.
+New patients are not booked until forms are saved. Labeled intake fields are written to the JSON database before the model sees them. That rule is also enforced when booking.
 
 ## Challenge checklist
 
 
-| Must-have                        | Where it lives                                |
-| -------------------------------- | --------------------------------------------- |
-| LangGraph state and control flow | `src/state.py`, `src/graph.py`                |
-| LangChain model, tools, RAG      | `src/llm.py`, `src/tools.py`, `src/rag.py`    |
-| LangSmith traces                 | `.env.example` + run metadata in `src/cli.py` |
-| End-to-end office task           | Book / forms / FAQ in one graph               |
-| Graph clarity                    | Mermaid diagram and state schema below        |
-| At least one tool                | Six tools in `src/tools.py`                   |
-| RAG over a mini KB               | `data/knowledge/*.md`                         |
-| One eval dataset                 | `evals/dataset.json`                          |
-
-
-
-| Nice-to-have              | Where it lives                        |
-| ------------------------- | ------------------------------------- |
-| PII redaction             | `src/guardrails.py`                   |
-| Streaming output          | `src/cli.py`                          |
-| Makefile / setup / Docker | `Makefile`, `setup.ps1`, `Dockerfile` |
-
-
-A readme for every file is in [FILE_GUIDE.md](FILE_GUIDE.md).
 
 ## How state moves
 
 ```mermaid
 flowchart TD
-    START --> redact_pii
+    START --> ingest_forms
+    ingest_forms --> redact_pii
     redact_pii --> classify_intent
     classify_intent --> retrieve_knowledge
     retrieve_knowledge -->|intent is faq| answer_faq
@@ -75,12 +55,13 @@ flowchart TD
 
 
 
-1. `redact_pii` copies SSN / email / phone / slash-dates out of the log text.
-2. `classify_intent` labels the turn: `faq`, `book`, `forms`, `cancel`, or `unknown`.
-3. `retrieve_knowledge` always runs BM25 RAG so the next node has office notes.
-4. **Decision:** FAQ goes to a grounded answer and stops. Everything else goes to the tool-using assistant.
-5. `assistant` **↔** `tools` looks up patients, reads open slots, saves forms, books, or cancels. The JSON file is the source of truth.
-6. `nudge_stall` **/** `fallback_closeout` retry once if the model stalls (“booking now” with no tool call), then close with a question.
+1. `ingest_forms` parses labeled intake fields (Name, Date of birth, Phone, Insurance, Medical notes). If all five are present they are saved to the JSON database with `forms_complete=true`. The model only sees a sanitized note plus the patient name.
+2. `redact_pii` copies SSN / email / phone / slash-dates out of the log text.
+3. `classify_intent` labels the turn: `faq`, `book`, `forms`, `cancel`, or `unknown`.
+4. `retrieve_knowledge` always runs BM25 RAG so the next node has office notes.
+5. **Decision:** FAQ goes to a grounded answer and stops. Everything else goes to the tool-using assistant.
+6. `assistant` **↔** `tools` looks up patients, reads open slots, books, or cancels. The JSON file is the source of truth.
+7. `nudge_stall` **/** `fallback_closeout` retry once if the model stalls (“booking now” with no tool call), then close with a question.
 
 LangGraph carries this `AgentState` from node to node (`src/state.py`):
 
@@ -94,6 +75,7 @@ classDiagram
         +retrieved_context str
         +pii_findings list
         +stall_retries int
+        +forms_ingested bool
     }
     class Intent {
         <<enumeration>>
@@ -111,13 +93,14 @@ classDiagram
 
 | Field               | What it holds                                             | Who writes it                                                                            |
 | ------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `messages`          | Chat history (appended, not replaced)                     | `starting_state`, `assistant`, `tools`, `answer_faq`, `nudge_stall`, `fallback_closeout` |
-| `user_text`         | Raw patient input for this turn                           | `starting_state`                                                                         |
+| `messages`          | Chat history (appended, not replaced)                     | `starting_state`, `ingest_forms`, `assistant`, `tools`, `answer_faq`, `nudge_stall`, `fallback_closeout` |
+| `user_text`         | Patient input for this turn, with intake values stripped  | `starting_state`, then `ingest_forms` if labeled fields were present                     |
 | `redacted_text`     | Same text with SSN / email / phone / slash-dates stripped | `redact_pii`                                                                             |
 | `intent`            | `faq`, `book`, `forms`, `cancel`, or `unknown`            | `classify_intent`                                                                        |
 | `retrieved_context` | BM25 office notes for this turn                           | `retrieve_knowledge`                                                                     |
 | `pii_findings`      | Labels of PII types found (for logs / LangSmith)          | `redact_pii`                                                                             |
 | `stall_retries`     | How many times a stall reply was nudged                   | `nudge_stall` (starts at `0`)                                                            |
+| `forms_ingested`    | True when this turn saved a complete intake form          | `ingest_forms`                                                                           |
 
 
 Nodes only return the fields they change. `messages` uses LangGraph’s `add_messages` reducer so tool calls and replies accumulate instead of overwriting the turn.
@@ -169,8 +152,6 @@ docker build -t riverside-dental-agent .
 docker run --rm -it --env-file .env riverside-dental-agent
 ```
 
-
-
 ## Try these prompts
 
 ```
@@ -182,13 +163,13 @@ I am a new patient named Jamie Cole. Book me tomorrow morning.
 Please file my new patient forms. Name: Jamie Cole. Date of birth: 1994-02-08. Phone: 555-0199. Insurance: none. Medical notes: no allergies.
 ```
 
-After Jamie's forms are saved, ask again to book any dentist. The second turn should succeed.
+After Jamie's forms are saved (before the model sees the labeled values), ask again to book any dentist. The second turn should succeed.
 
 ## LangSmith
 
 With `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` set, each turn is a trace in the `riverside-dental-agent` project.
 
-You should see the node path (`redact_pii` → `classify_intent` → `retrieve_knowledge` → …), tool calls, and metadata:
+You should see the node path (`ingest_forms` → `redact_pii` → `classify_intent` → `retrieve_knowledge` → …), tool calls, and metadata:
 
 - `redacted_input` — PII stripped copy of the user text
 - `case_id` — present on eval runs

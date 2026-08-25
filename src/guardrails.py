@@ -1,10 +1,3 @@
-"""
-FILE: src/guardrails.py
-WHY: Nice-to-have PII redaction. The live agent still sees the original
-     message (it needs a phone number to save forms). LangSmith metadata
-     and debug prints get the redacted copy instead.
-"""
-
 from __future__ import annotations
 
 import re
