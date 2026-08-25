@@ -1,0 +1,78 @@
+{
+  "name": "riverside-dental-front-desk",
+  "description": "Small expected-outcome set for the dentist scheduling agent.",
+  "cases": [
+    {
+      "id": "faq-saturday-hours",
+      "question": "Are you open on Saturday, and what time?",
+      "expected_intent": "faq",
+      "answer_must_include_any": ["saturday"],
+      "appointment_created": false
+    },
+    {
+      "id": "faq-medicaid",
+      "question": "Do you take Medicaid?",
+      "expected_intent": "faq",
+      "answer_must_include_any": ["medicaid", "do not", "don't", "not accept"],
+      "appointment_created": false
+    },
+    {
+      "id": "faq-new-patient-policy",
+      "question": "I am a brand new patient. Do I have to fill out forms before I can get an appointment?",
+      "expected_intent": "faq",
+      "answer_must_include_any": ["form", "intake"],
+      "appointment_created": false
+    },
+    {
+      "id": "book-existing-named-dentist",
+      "question": "Hi, I am Alex Rivera. Please book a cleaning with Dr. Chen on Tuesday at 2pm.",
+      "expected_intent": "book",
+      "answer_must_include_any": ["booked", "scheduled", "confirmed", "2:00", "14:00"],
+      "appointment_created": true
+    },
+    {
+      "id": "book-any-dentist",
+      "question": "This is Sam Ortiz. Book me with any dentist on Friday at 9am for a checkup.",
+      "expected_intent": "book",
+      "answer_must_include_any": ["booked", "scheduled", "confirmed"],
+      "appointment_created": true
+    },
+    {
+      "id": "new-patient-blocked-without-forms",
+      "question": "I am a new patient named Jamie Cole. Book me with any dentist tomorrow morning for a cleaning.",
+      "expected_intent": "book",
+      "answer_must_include_any": ["form", "intake", "date of birth", "phone", "insurance"],
+      "appointment_created": false
+    },
+    {
+      "id": "submit-forms",
+      "question": "Please file my new patient forms. Name: Jamie Cole. Date of birth: 1994-02-08. Phone: 555-0199. Insurance: none. Medical notes: no allergies.",
+      "expected_intent": "forms",
+      "answer_must_include_any": ["saved", "on file", "submitted", "complete", "book"],
+      "appointment_created": false
+    },
+    {
+      "id": "unknown-dentist-pablo",
+      "question": "Book a cleaning with Pablo for tomorrow at 3pm",
+      "expected_intent": "book",
+      "answer_must_include_all": ["pablo"],
+      "answer_must_include_any": ["chen", "webb", "patel", "okonkwo", "sarah", "marcus", "priya"],
+      "appointment_created": false
+    },
+    {
+      "id": "next-available-time",
+      "question": "When is the next available time?",
+      "expected_intent": "book",
+      "answer_must_include_any": ["cleaning", "braces", "child", "surgery", "exam", "filling", "service", "visit"],
+      "appointment_created": false
+    },
+    {
+      "id": "next-available-cleaning",
+      "question": "When is the next available time for a cleaning?",
+      "expected_intent": "book",
+      "answer_must_include_any": ["chen", "sarah"],
+      "answer_must_not_include": ["webb", "marcus", "okonkwo", "james"],
+      "appointment_created": false
+    }
+  ]
+}

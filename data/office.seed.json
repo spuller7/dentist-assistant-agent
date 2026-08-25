@@ -1,0 +1,90 @@
+{
+  "office_name": "Riverside Family Dental",
+  "phone": "555-0100",
+  "dentists": [
+    {
+      "id": "chen",
+      "name": "Dr. Sarah Chen",
+      "specialty": "General Dentistry",
+      "aliases": ["chen", "sarah", "sarah chen", "dr chen", "dr. chen", "general"],
+      "working_days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+      "slots": ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00"]
+    },
+    {
+      "id": "spuller",
+      "name": "Dr. Travis Spuller",
+      "specialty": "General Dentistry",
+      "aliases": ["spuller", "travis", "travis spuller", "dr spuller", "dr. spuller", "evening"],
+      "working_days": ["Monday", "Wednesday", "Friday"],
+      "slots": ["13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"]
+    },
+    {
+      "id": "webb",
+      "name": "Dr. Marcus Webb",
+      "specialty": "Orthodontics",
+      "aliases": ["webb", "marcus", "marcus webb", "dr webb", "dr. webb", "ortho", "braces", "invisalign"],
+      "working_days": ["Monday", "Wednesday", "Friday"],
+      "slots": ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00"]
+    },
+    {
+      "id": "patel",
+      "name": "Dr. Priya Patel",
+      "specialty": "Pediatric Dentistry",
+      "aliases": ["patel", "priya", "priya patel", "dr patel", "dr. patel", "pediatric", "kids", "child"],
+      "working_days": ["Tuesday", "Wednesday", "Thursday"],
+      "slots": ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00"]
+    },
+    {
+      "id": "okonkwo",
+      "name": "Dr. James Okonkwo",
+      "specialty": "Oral Surgery",
+      "aliases": ["okonkwo", "james", "james okonkwo", "dr okonkwo", "dr. okonkwo", "surgery", "extraction", "wisdom"],
+      "working_days": ["Tuesday", "Thursday"],
+      "slots": ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00"]
+    }
+  ],
+  "patients": [
+    {
+      "id": "p-rivera",
+      "name": "Alex Rivera",
+      "phone": "555-0142",
+      "date_of_birth": "1991-04-12",
+      "is_new": false,
+      "forms_complete": true,
+      "insurance": "Delta Dental PPO",
+      "preferred_dentist_id": "chen"
+    },
+    {
+      "id": "p-ortiz",
+      "name": "Sam Ortiz",
+      "phone": "555-0188",
+      "date_of_birth": "1986-09-03",
+      "is_new": false,
+      "forms_complete": true,
+      "insurance": "Cigna PPO",
+      "preferred_dentist_id": null
+    }
+  ],
+  "appointments": [
+    {
+      "id": "apt-001",
+      "patient_id": "p-rivera",
+      "patient_name": "Alex Rivera",
+      "dentist_id": "chen",
+      "dentist_name": "Dr. Sarah Chen",
+      "date": "2026-08-27",
+      "time": "10:00",
+      "reason": "cleaning"
+    },
+    {
+      "id": "apt-002",
+      "patient_id": "p-ortiz",
+      "patient_name": "Sam Ortiz",
+      "dentist_id": "patel",
+      "dentist_name": "Dr. Priya Patel",
+      "date": "2026-08-26",
+      "time": "11:00",
+      "reason": "checkup"
+    }
+  ]
+}
