@@ -1,7 +1,7 @@
 # FILE: Makefile
-# WHY: One-command setup, run, graph print, and evals. Nice-to-have for reviewers.
+# WHY: One-command setup, run, and evals. Nice-to-have for reviewers.
 
-.PHONY: setup run eval eval-smith graph reset docker-build docker-run
+.PHONY: setup run eval eval-smith reset docker-build docker-run
 
 setup:
 	python -m venv .venv
@@ -16,9 +16,6 @@ eval:
 
 eval-smith:
 	python -m evals.run_evals --langsmith
-
-graph:
-	python -m src.cli --graph
 
 reset:
 	python -m src.cli --reset-db

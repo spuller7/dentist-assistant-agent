@@ -1,7 +1,7 @@
 """
 FILE: src/cli.py
 WHY: Simple interface for the demo. Prints the final patient-facing reply
-     after a turn finishes. Flags print the graph or reset the JSON database.
+     after a turn finishes. Flags reset the JSON database or run one turn.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from langchain_core.messages import AIMessage
 
 from src.db import reset_db
-from src.graph import build_graph, mermaid_diagram, starting_state
+from src.graph import build_graph, starting_state
 from src.guardrails import redact_pii
 from src.paths import db_path
 
@@ -30,10 +30,6 @@ def _trace_config(turn: int, redacted: str = "") -> dict:
             "redacted_input": redacted,
         },
     }
-
-
-def print_graph() -> None:
-    print(mermaid_diagram())
 
 
 def _visible_text(content) -> str:
@@ -120,7 +116,7 @@ def chat_loop() -> None:
     print("- Answer questions about hours, insurance, and who works here")
     print()
     print(f"Database: {db_path()}")
-    print("Type 'quit' to exit, 'graph' to see the workflow, or 'reset' to restore the seed database.\n")
+    print("Type 'quit' to exit or 'reset' to restore the seed database.\n")
 
     while True:
         try:
@@ -133,9 +129,6 @@ def chat_loop() -> None:
         if user_text.lower() in {"quit", "exit"}:
             print("Goodbye.")
             return
-        if user_text.lower() == "graph":
-            print_graph()
-            continue
         if user_text.lower() == "reset":
             reset_db()
             history = []
@@ -148,14 +141,10 @@ def chat_loop() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Riverside Family Dental front-desk agent")
-    parser.add_argument("--graph", action="store_true", help="Print the LangGraph mermaid diagram and exit")
     parser.add_argument("--reset-db", action="store_true", help="Restore data/office.json from the seed file and exit")
     parser.add_argument("--once", metavar="TEXT", help="Run one turn and exit (useful for scripts)")
     args = parser.parse_args()
 
-    if args.graph:
-        print_graph()
-        return
     if args.reset_db:
         path = reset_db()
         print(f"Restored {path} from seed.")

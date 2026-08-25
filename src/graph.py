@@ -400,10 +400,6 @@ def build_graph():
     return graph.compile()
 
 
-def mermaid_diagram() -> str:
-    return build_graph().get_graph().draw_mermaid()
-
-
 def starting_state(user_text: str) -> AgentState:
     return {
         "messages": [HumanMessage(content=user_text)],

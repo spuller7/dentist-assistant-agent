@@ -27,7 +27,7 @@ This is the readme for every file in the project: what it is, and why it was inc
 **Why included:** One install command should recreate the demo.
 
 ### `Makefile`
-**Purpose:** `setup`, `run`, `eval`, `graph`, and Docker shortcuts.
+**Purpose:** `setup`, `run`, `eval`, `reset`, and Docker shortcuts.
 **Why included:** Nice-to-have setup script for Mac/Linux reviewers.
 
 ### `setup.ps1`
@@ -127,8 +127,8 @@ This is the readme for every file in the project: what it is, and why it was inc
 **Why included:** This is the LangGraph control flow. Classify decides FAQ vs scheduling. FAQ ends after a grounded answer. Scheduling loops through tools until the model stops calling them.
 
 ### `src/cli.py`
-**Purpose:** Interactive chat, `--graph`, `--reset-db`, `--once`, and streamed tokens.
-**Why included:** The challenge allows a CLI. Streaming is a nice-to-have. The mermaid flag is how you show the graph without reading Python.
+**Purpose:** Interactive chat, `--reset-db`, `--once`, and streamed tokens.
+**Why included:** The challenge allows a CLI. Streaming is a nice-to-have.
 
 ---
 
